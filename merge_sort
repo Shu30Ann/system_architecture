@@ -1,0 +1,152 @@
+	AREA DataSection, DATA, READWRITE
+    ALIGN 4
+
+array   DCD 8, 29, 50, 81, 4, 23, 24, 30, 1, 7  ; Initial array
+temp    SPACE 40                                ; Temporary array space
+stack   SPACE 1024                              ; Allocate space for a software stack
+
+    AREA Merge, CODE, READONLY
+
+    ENTRY
+
+start
+    LDR SP, =stack+1024        ; Initialize the software stack pointer at the top of the allocated stack space
+    LDR r0, =array             ; Load array address
+    LDR r1, =10                ; Load array size
+
+    BL merge_sort              ; Call merge sort
+
+done
+    B done                     ; Infinite loop (end of program)
+
+; Merge sort function
+merge_sort
+    ; Save return address manually
+    SUB SP, SP, #4             ; Allocate space on stack
+    STR LR, [SP]               ; Store LR (return address) on stack
+
+    ; Check if array has more than one element
+    CMP r1, #1
+    BLE merge_sort_end
+
+    ; Calculate middle point
+    LSR r2, r1, #1             ; r2 = size / 2
+
+    ; Save registers manually
+    SUB SP, SP, #12            ; Allocate space for r0, r1, r2
+    STR r0, [SP, #0]           ; Store r0
+    STR r1, [SP, #4]           ; Store r1
+    STR r2, [SP, #8]           ; Store r2
+
+    ; Sort first half
+    MOV r1, r2                 ; Update size for first half
+    BL merge_sort              ; Recursive call for left half
+
+    ; Restore registers manually
+    LDR r0, [SP, #0]           ; Restore r0
+    LDR r1, [SP, #4]           ; Restore r1
+    LDR r2, [SP, #8]           ; Restore r2
+    ADD SP, SP, #12            ; Free allocated stack space
+
+    ; Save registers manually again
+    SUB SP, SP, #12            ; Allocate space for r0, r1, r2
+    STR r0, [SP, #0]           ; Store r0
+    STR r1, [SP, #4]           ; Store r1
+    STR r2, [SP, #8]           ; Store r2
+
+    ; Sort second half
+    ADD r0, r0, r2, LSL #2     ; Move pointer to second half
+    SUB r1, r1, r2             ; Update size for second half
+    BL merge_sort              ; Recursive call for right half
+
+    ; Restore registers manually
+    LDR r0, [SP, #0]           ; Restore r0
+    LDR r1, [SP, #4]           ; Restore r1
+    LDR r2, [SP, #8]           ; Restore r2
+    ADD SP, SP, #12            ; Free allocated stack space
+
+    ; Merge the sorted halves
+    BL merge
+
+merge_sort_end
+    LDR LR, [SP]               ; Restore LR (return address)
+    ADD SP, SP, #4             ; Free allocated stack space
+    BX LR                      ; Return to the caller
+
+; Merge function
+merge
+    ; Save working registers manually
+    SUB SP, SP, #32            ; Allocate space for r4-r11
+    STMIA SP!, {r4-r11}        ; Store r4-r11
+
+    ; Initialize indices
+    MOV r3, #0                 ; i = 0
+    MOV r4, r2                 ; j = mid
+    MOV r5, #0                 ; k = 0
+
+merge_loop
+    CMP r3, r2                 ; Check if first half is done
+    BGE copy_remaining
+    CMP r4, r1                 ; Check if second half is done
+    BGE copy_remaining
+
+    LDR r6, [r0, r3, LSL #2]   ; Load element from first half
+    LDR r7, [r0, r4, LSL #2]   ; Load element from second half
+
+    CMP r6, r7
+    BLE copy_left
+
+    ; Copy from right
+    LDR r8, =temp
+    STR r7, [r8, r5, LSL #2]
+    ADD r4, r4, #1
+    B increment_k
+
+copy_left
+    LDR r8, =temp
+    STR r6, [r8, r5, LSL #2]
+    ADD r3, r3, #1
+
+increment_k
+    ADD r5, r5, #1
+    B merge_loop
+
+copy_remaining
+    CMP r3, r2                 ; Copy remaining elements from first half
+    BGE copy_second
+    LDR r6, [r0, r3, LSL #2]
+    LDR r8, =temp
+    STR r6, [r8, r5, LSL #2]
+    ADD r3, r3, #1
+    ADD r5, r5, #1
+    B copy_remaining
+
+copy_second
+    CMP r4, r1                 ; Copy remaining elements from second half
+    BGE merge_done
+    LDR r7, [r0, r4, LSL #2]
+    LDR r8, =temp
+    STR r7, [r8, r5, LSL #2]
+    ADD r4, r4, #1
+    ADD r5, r5, #1
+    B copy_second
+
+merge_done
+    ; Copy back to original array
+    MOV r3, #0
+copy_back
+    CMP r3, r1
+    BGE merge_end
+    LDR r8, =temp
+    LDR r6, [r8, r3, LSL #2]
+    STR r6, [r0, r3, LSL #2]
+    ADD r3, r3, #1
+    B copy_back
+
+merge_end
+    ; Restore working registers manually
+    LDMIA SP!, {r4-r11}        ; Restore r4-r11
+    ADD SP, SP, #32            ; Free allocated stack space
+    BX LR                      ; Return to the caller
+
+    END
